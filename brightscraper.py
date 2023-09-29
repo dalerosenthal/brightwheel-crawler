@@ -678,7 +678,7 @@ def main():
         pic_matches = photo_matches[student_name]
         get_photos(media_folder, browser, student_name, pic_matches)
     for student_name in video_matches.keys():
-        vid_matches = photo_matches[student_name]
+        vid_matches = video_matches[student_name]
         get_videos(media_folder, browser, student_name, vid_matches)
     clear_cookies(browser)
     logging.shutdown()
