@@ -33,7 +33,7 @@ from multiprocessing.dummy import Pool
 
 
 """
-From the origial brightscraper comments:
+From the original brightscraper comments:
 I was saving pictures ad hoc through the brightwheel app, but got way behind
 and didn't want to lose them if my kid changed schools or lost access to the app.
 This uses selenium to crawl a BrightWheel (https://mybrightwheel.com/) profile
@@ -345,10 +345,12 @@ def vid_finder(browser, video_feed, student_name):
 
 def get_photos(media_folder, browser, student_name, matches):
     """
-    Since Selenium doesn't handle saving images/videos well, requests
-    can do this for us, but we need to pass it the cookies. First though,
-    check if there is no work to do
+    Since Selenium doesn't handle saving images/videos well, requests can
+    do this for us, but we need to pass it the cookies. Also, we may see
+    multiple photos in the same minute, so we need to make sure there are
+    no collisions in filenames (since we use the timestamp as the name).
     """
+    # First, check if there is no work to do
     if len(matches) == 0:
         logging.info("[-] No photos to grab for {}".format(student_name))
         return
@@ -358,60 +360,48 @@ def get_photos(media_folder, browser, student_name, matches):
     for cookie in cookies:
         session.cookies.set(cookie['name'], cookie['value'])
 
+    photo_names_register = {}
     photo_dir = os.path.join(media_folder, "pics-"+student_name)
     # creating pics directory if it does not already exist
     Path(photo_dir).mkdir(parents=True, exist_ok=True)
     for match in matches:
-        new_fname = match["DateTime"].replace(":","-")
+        photo_filename_base = match["DateTime"].replace(":","-")
         file_name, file_extension = match["PhotoURL"].split("/")[-1].split('?')[0].split('.')
-        photo_filename = photo_dir+"/"+new_fname+"."+file_extension
-        logging.info('[-] - Downloading {} to {}'.format(file_name+"."+file_extension, new_fname))
+        photo_filename = photo_filename_base+"."+file_extension
+        # resolve name clashes
+        if photo_filename in photo_names_register:
+            photo_clash_counter = photo_names_register[photo_filename]
+            photo_names_register[photo_filename] += 1
+            photo_filename = photo_filename_base+"-{}.{}".format(photo_clash_counter, file_extension)
+        else:
+            photo_names_register[photo_filename] = 1
+        full_photo_filename = os.path.join(photo_dir, photo_filename)
+        logging.info('[-] - Downloading {} to {}'.format(file_name+"."+file_extension, photo_filename))
         try:
             request = session.get(match["PhotoURL"])
-            open(photo_filename, 'wb').write(request.content)
+            open(full_photo_filename, 'wb').write(request.content)
         except:
             logging.error('[!] - Failed to save {}'.format(match["PhotoURL"]))
             continue
         time.sleep(1+random.random())
         try:
-            img = Image.open(photo_filename)
-            if False:
-                exif_dict = img.getexif()
-                exif_dict[ExifTags.Base.DateTime] = match["DateTime"]
-                exif_dict[ExifTags.Base.DateTimeOriginal] = match["DateTime"]
-                exif_dict[ExifTags.Base.DateTimeDigitized] = match["DateTime"]
-                #exif_dict[ExifTags.Base.GPSInfo][ExifTags.GPS.GPSLatitude] = match["GPSLatitude"]
-                #exif_dict[ExifTags.Base.GPSInfo][ExifTags.GPS.GPSLatitudeRef] = match["GPSLatitudeRef"]
-                #exif_dict[ExifTags.Base.GPSInfo][ExifTags.GPS.GPSLongitude] = match["GPSLongitude"]
-                #exif_dict[ExifTags.Base.GPSInfo][ExifTags.GPS.GPSLongitudeRef] = match["GPSLongitudeRef"]
-                #exif_dict[ExifTags.Base.GPSInfo][ExifTags.GPS.GPSAltitude] = match["GPSAltitude"]
-                #exif_dict[ExifTags.Base.GPSInfo][ExifTags.GPS.GPSAltitudeRef] = match["GPSAltitudeRef"]
-                exif_dict[ExifTags.GPS.GPSLatitude] = match["GPSLatitude"]
-                exif_dict[ExifTags.GPS.GPSLatitudeRef] = match["GPSLatitudeRef"]
-                exif_dict[ExifTags.GPS.GPSLongitude] = match["GPSLongitude"]
-                exif_dict[ExifTags.GPS.GPSLongitudeRef] = match["GPSLongitudeRef"]
-                exif_dict[ExifTags.GPS.GPSAltitude] = match["GPSAltitude"]
-                exif_dict[ExifTags.GPS.GPSAltitudeRef] = match["GPSAltitudeRef"]
-                if "UserComment" in match:
-                    exif_dict[ExifTags.Base.UserComment] = match["UserComment"].encode()
-                exif_bytes = exif_dict # ???
-            else:
-                exif_dict = piexif.load(img.info['exif'])
-                exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = match["DateTime"]
-                exif_dict["Exif"][piexif.ExifIFD.DateTimeDigitized] = match["DateTime"]
-                exif_dict['GPS'][piexif.GPSIFD.GPSLatitude] = match["GPSLatitude"]
-                exif_dict['GPS'][piexif.GPSIFD.GPSLatitudeRef] = match["GPSLatitudeRef"]
-                exif_dict['GPS'][piexif.GPSIFD.GPSLongitude] = match["GPSLongitude"]
-                exif_dict['GPS'][piexif.GPSIFD.GPSLongitudeRef] = match["GPSLongitudeRef"]
-                exif_dict['GPS'][piexif.GPSIFD.GPSAltitude] = match["GPSAltitude"]
-                exif_dict['GPS'][piexif.GPSIFD.GPSAltitudeRef] = match["GPSAltitudeRef"]
-                if "UserComment" in match:
-                    exif_dict["Exif"][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(
-                        match["UserComment"], encoding="unicode")
-                exif_bytes = piexif.dump(exif_dict)
-            img.save(photo_filename, "jpeg", exif=exif_bytes, quality=100) # was exif_bytes
+            img = Image.open(full_photo_filename)
+            exif_dict = piexif.load(img.info['exif'])
+            exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = match["DateTime"]
+            exif_dict["Exif"][piexif.ExifIFD.DateTimeDigitized] = match["DateTime"]
+            exif_dict['GPS'][piexif.GPSIFD.GPSLatitude] = match["GPSLatitude"]
+            exif_dict['GPS'][piexif.GPSIFD.GPSLatitudeRef] = match["GPSLatitudeRef"]
+            exif_dict['GPS'][piexif.GPSIFD.GPSLongitude] = match["GPSLongitude"]
+            exif_dict['GPS'][piexif.GPSIFD.GPSLongitudeRef] = match["GPSLongitudeRef"]
+            exif_dict['GPS'][piexif.GPSIFD.GPSAltitude] = match["GPSAltitude"]
+            exif_dict['GPS'][piexif.GPSIFD.GPSAltitudeRef] = match["GPSAltitudeRef"]
+            if "UserComment" in match:
+                exif_dict["Exif"][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(
+                    match["UserComment"], encoding="unicode")
+            exif_bytes = piexif.dump(exif_dict)
+            img.save(full_photo_filename, "jpeg", exif=exif_bytes, quality=100) # was exif_bytes
         except:
-            logging.error('[!] - Could not write EXIF data for file {}'.format(new_fname+"."+file_extension))
+            logging.error('[!] - Could not write EXIF data for file {}'.format(photo_filename))
     logging.info("[-] Finished writing all photo files for {}".format(student_name))
 
 
@@ -604,9 +594,11 @@ def download_m3u8_videostream(browser, session, match, outdir, mp4_outfile):
 def get_videos(media_folder, browser, student_name, matches):
     """
     Since Selenium doesn't handle saving images/videos well, requests
-    can do this for us, but we need to pass it the cookies. First though,
-    check if there is no work to do
+    can do this for us, but we need to pass it the cookies. Also, we may see
+    multiple videos in the same minute, so we need to make sure there are
+    no collisions in filenames (since we use the timestamp as the name).
     """
+    # First, check if there is no work to do
     if len(matches) == 0:
         logging.info("[-] No videos to grab for {}".format(student_name))
         return
@@ -616,17 +608,24 @@ def get_videos(media_folder, browser, student_name, matches):
     for cookie in cookies:
         session.cookies.set(cookie['name'], cookie['value'])
 
+    video_names_register = {}
     video_dir = os.path.join(media_folder, "vids-"+student_name)
-    # creating pics directory if it does not already exist
+    # creating vids directory if it does not already exist
     Path(video_dir).mkdir(parents=True, exist_ok=True)
     os.chdir(video_dir)
     for match in matches:
-        new_fname = (match["DateTime"].replace(":","-"))+".mp4"
+        video_filename_base = (match["DateTime"].replace(":","-"))+".mp4"
         file_name, file_extension = match["VideoURL"].split("/")[-1].split('?')[0].split('.')
-        video_filename = video_dir+"/"+new_fname
-        logging.info('[-] - Downloading {} stream files to {}'.format(file_name+"."+file_extension, new_fname))
-        #m3u8_To_MP4.multithread_download(match['VideoURL'], mp4_file_dir=video_dir, mp4_file_name=new_fname)
-        download_m3u8_videostream(browser, session, match, video_dir, new_fname)
+        video_filename = video_filename_base+"."+file_extension
+        # resolve name clashes
+        if video_filename in video_names_register:
+            video_clash_counter = video_names_register[video_filename]
+            video_names_register[video_filename] += 1
+            video_filename = video_filename_base+"-{}.{}".format(video_clash_counter, file_extension)
+        else:
+            video_names_register[video_filename] = 1
+        logging.info('[-] - Downloading {} stream files to {}'.format(file_name+"."+file_extension, video_filename))
+        download_m3u8_videostream(browser, session, match, video_dir, video_filename)
     logging.info("[-] Finished writing all video files for student {}".format(student_name))
 
 
@@ -644,7 +643,7 @@ def clear_cookies(browser):
 
 def main():
     """Init logging and set up Chrome connection"""
-    logging.basicConfig(filename='scraper.log', filemode='w')
+    logging.basicConfig(filename='scraper.log', filemode='w', level=logging.DEBUG)
 
     options = webdriver.ChromeOptions() # Options()
     options.debugger_address = '127.0.0.1:9014'
@@ -653,6 +652,7 @@ def main():
 
     username, password, signin_url, kidlist_url, startdate, enddate, media_folder = config_parser()
 
+    # commented out since the code requires having a manually logged-in Chrome browser
     #browser = signme_in(browser, username, password, signin_url)
     students = get_students(browser, kidlist_url)
     # we get the students in an ephemeral iterable; save it to something permanent
