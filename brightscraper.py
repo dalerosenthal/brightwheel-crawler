@@ -23,8 +23,8 @@ import piexif
 import piexif.helper
 from PIL import Image, ExifTags
 #from PIL.ExifTags import GPS, TAGS
-#import mutagen
-#from mutagen.mp4 import MP4
+import mutagen
+from mutagen.mp4 import MP4
 from pathlib import Path
 import random
 
