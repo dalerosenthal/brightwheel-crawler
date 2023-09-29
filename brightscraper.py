@@ -157,7 +157,7 @@ def load_full_page(media_type, browser, student_page, startdate, enddate):
         # uploaded each day on average.
         # Commented out below (along with the print statement to figure out
         # how high you can go) but here in case you too need it.
-        while more2load is True and counter < 3:
+        while more2load is True:   # and counter < 3:
             #print("[?] Page load counter: {}".format(counter))
             # Look for the "Load More" button...
             try:
