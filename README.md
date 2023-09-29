@@ -7,7 +7,7 @@ This is based on @remotephone's brightwheel crawling code. His original comments
 
 My comments:
 I have addded a few more features to this code and made a couple modifications.
-- Changed the code to use a Chrome browser run with --remote_debugging_port=9014 (as per @orennir's suggestion)
+- Changed the code to use a Chrome browser run with --remote-debugging-port=9014 (as per @orennir's suggestion)
 - Commented out the login code since Brightwheel seems to sometimes ask "Are you a Bot?" which requires human intervention. (I mean... "No. But yes? A dad bot? Someone who would've paid $20 for you to just drop me my photos and videos in bulk with timestamps and comments in the metadata... but why have another revenue source? Let's go with Bottish.)
 - Added logic to handle multiple students. Be aware: Brightwheel tends to log me out of their site after bulk grabs of media. Hence I grab all the URLs and metadata for all students before doing bulk grabs.
 - Added logic to grab photos AND videos! W00t! Only... the code is a bit copy-and-paste, so I'm not proud of the lack of elegance their. Please avert your eyes; thankfully you should have a folder of your kid's pics -n- vids to distract you from that crusty copypython.
