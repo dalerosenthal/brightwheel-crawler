@@ -158,7 +158,7 @@ def load_full_page(media_type, browser, student_page, startdate, enddate):
         # Commented out below (along with the print statement to figure out
         # how high you can go) but here in case you too need it.
         while more2load is True:   # and counter < 3:
-            #print("[?] Page load counter: {}".format(counter))
+            logging.debug("[?] Page load counter: {}".format(counter))
             # Look for the "Load More" button...
             try:
                 counter += 1
@@ -516,9 +516,9 @@ def download_m3u8_videostream(browser, session, match, outdir, mp4_outfile):
 
     # Using multithreading to parallel downloading
     pool = Pool(20)
-    gen = pool.imap(partial(download_ts_file, session=session, store_dir='.'), ts_url_list)
+    downloader_spawn = pool.imap(partial(download_ts_file, session=session, store_dir='.'), ts_url_list)
     # create a progress bar for the downloading
-    for _ in tqdm.tqdm(gen, total=len(ts_url_list)):
+    for sprog in tqdm.tqdm(downloader_spawn, total=len(ts_url_list)):
         pass
     pool.close()
     pool.join()
@@ -534,33 +534,31 @@ def download_m3u8_videostream(browser, session, match, outdir, mp4_outfile):
     # not sure why this says it is ordered; not sure that's guaranteed from glob.glob
     ordered_ts_names = [ts_name for ts_name in ts_names if ts_name in downloaded_ts]
 
-    if len(ordered_ts_names) > 200:
+    batch_size = 200
+    if len(ordered_ts_names) > batch_size:
         mp4_fnames = []
-        part_num = len(ordered_ts_names) // 200 + 1
-        for _i in range(part_num):
+        max_part_nums = len(ordered_ts_names) // batch_size + 1
+        for part_num in range(max_part_nums):
             sub_files_str = "concat:"
 
-            _idx_list = range(200)
-            if _i == part_num - 1:
-                _idx_list = range(len(ordered_ts_names[_i * 200:]))
+            _idx_list = range(batch_size)
+            if part_num == max_part_nums - 1:
+                _idx_list = range(len(ordered_ts_names[part_num * batch_size:]))
             for ts_idx in _idx_list:
-                sub_files_str += ordered_ts_names[ts_idx + _i * 200] + '|'
+                sub_files_str += ordered_ts_names[ts_idx + part_num * batch_size] + '|'
             sub_files_str = sub_files_str.rstrip('|')
 
             # files_str += 'part_{}.mp4'.format(_i) + '|'
             mp4_fnames.append('part_{}.mp4'.format(_i))
-            subprocess.run([
-                'ffmpeg', '-i', sub_files_str, '-c', 'copy', '-bsf:a', 'aac_adtstoasc', 'part_{}.mp4'.format(_i)
-            ])
+            ffmpeg_command_bits = ['ffmpeg', '-i', sub_files_str, '-c', 'copy', '-bsf:a',
+                                   'aac_adtstoasc', 'part_{}.mp4'.format(_i)]
+            subprocess.run(ffmpeg_command_bits)
 
         with open("mylist.txt", 'w') as f:
             for mp4_fname in mp4_fnames:
                 f.write(f"file {mp4_fname}\n")
-        subprocess.run([
-            'ffmpeg', "-f",
-            "concat", "-i", "mylist.txt",
-            '-codec', 'copy', mp4_outfile
-        ])
+        # now join the parts together
+        subprocess.run(['ffmpeg', "-f", "concat", "-i", "mylist.txt", '-codec', 'copy', mp4_outfile])
     else:
         files_str = "concat:"
         for ts_filename in ordered_ts_names:
@@ -578,14 +576,15 @@ def download_m3u8_videostream(browser, session, match, outdir, mp4_outfile):
             vidfile["\xa9cmt"] = match["UserComment"]
         logging.info("[-] Tagged video {}".format(vidfile.pprint()))
         vidfile.save()
-        mp4_newpath = os.path.join(outdir, os.path.basename(mp4_outfile))
-        mp4_fullpath = os.path.abspath(mp4_outfile)
-        os.chdir(outdir)
-        shutil.move(mp4_fullpath, mp4_newpath)
         endTime = datetime.now()
         logging.info("[-] Pieced together video {}, time spent: {}".format(mp4_outfile, endTime - startTime))
     except:
-        logging.error("[!] Failed to open and write file {}".format(mp4_outfile))
+        logging.error("[!] Failed to open and write tags to file {}".format(mp4_outfile))
+
+    mp4_newpath = os.path.join(outdir, os.path.basename(mp4_outfile))
+    mp4_fullpath = os.path.abspath(mp4_outfile)
+    os.chdir(outdir)
+    shutil.move(mp4_fullpath, mp4_newpath)
 
     # Remove all split *.ts
     shutil.rmtree(ts_folder)
@@ -593,8 +592,8 @@ def download_m3u8_videostream(browser, session, match, outdir, mp4_outfile):
 
 def get_videos(media_folder, browser, student_name, matches):
     """
-    Since Selenium doesn't handle saving images/videos well, requests
-    can do this for us, but we need to pass it the cookies. Also, we may see
+    Since Selenium doesn't handle saving images/videos well, requests can
+    do this for us, but we need to pass it the cookies. Also, we may see
     multiple videos in the same minute, so we need to make sure there are
     no collisions in filenames (since we use the timestamp as the name).
     """
@@ -614,14 +613,14 @@ def get_videos(media_folder, browser, student_name, matches):
     Path(video_dir).mkdir(parents=True, exist_ok=True)
     os.chdir(video_dir)
     for match in matches:
-        video_filename_base = (match["DateTime"].replace(":","-"))+".mp4"
+        video_filename_base = (match["DateTime"].replace(":","-"))
         file_name, file_extension = match["VideoURL"].split("/")[-1].split('?')[0].split('.')
-        video_filename = video_filename_base+"."+file_extension
+        video_filename = video_filename_base+".mp4"
         # resolve name clashes
         if video_filename in video_names_register:
             video_clash_counter = video_names_register[video_filename]
             video_names_register[video_filename] += 1
-            video_filename = video_filename_base+"-{}.{}".format(video_clash_counter, file_extension)
+            video_filename = video_filename_base+"-{}.mp4".format(video_clash_counter)
         else:
             video_names_register[video_filename] = 1
         logging.info('[-] - Downloading {} stream files to {}'.format(file_name+"."+file_extension, video_filename))
